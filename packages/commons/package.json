@@ -1,0 +1,15 @@
+{
+  "name": "commons",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "export": {
+    ".": "./index.ts"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
