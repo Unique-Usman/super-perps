@@ -36,6 +36,8 @@
     "apps/backend-poller": {
       "name": "backend-poller",
       "dependencies": {
+        "commons": "workspace:*",
+        "db": "workspace:*",
         "redis": "^6.0.0",
       },
       "devDependencies": {
