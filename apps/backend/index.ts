@@ -1,4 +1,5 @@
 import express from "express";
+import type { Request, Response, NextFunction } from "express";
 import { prisma } from "db";
 import singUp from "./controller/signUp";
 import signIn from "./controller/signIn";
@@ -8,6 +9,12 @@ import authMiddleWare from "./middleware/authMiddleware";
 import { loopback } from "./loopback";
 import onramp from "./controller/onramp";
 import order from "./controller/order";
+import getAvailableEquity from "./controller/getAvailableEquity";
+import positionsOpenMarketId from "./controller/positionsOpenMarketId";
+import positionsClosedMarketId from "./controller/positionsClosedMarketId";
+import ordersOpenMarketId from "./controller/ordersOpenMarketId";
+import ordersMarketId from "./controller/ordersMarketId";
+import fills from "./controller/fills";
 
 const app = express();
 
@@ -65,8 +72,15 @@ app.post("/admin/market", async (req, res) => {
 });
 
 app.post("/api/v1/onramp", authMiddleWare, onramp);
-
 app.post("/api/v1/order", authMiddleWare, order);
+
+
+app.get("/equity/available", authMiddleWare, getAvailableEquity);
+app.get("/positions/open/:marketId", authMiddleWare, positionsOpenMarketId);
+app.get("/positions/closed/:marketId", authMiddleWare, positionsClosedMarketId);
+app.get("/orders/open/:marketId", authMiddleWare, ordersOpenMarketId);
+app.get("/orders/:marketId", authMiddleWare, ordersMarketId);
+app.get("/fills", authMiddleWare, fills);
 
 app.use(notFound);
 app.use(errorHandler);

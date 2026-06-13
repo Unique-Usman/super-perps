@@ -54,6 +54,15 @@ type OrderBook = {
 const users = new Map<string, EngineUser>();
 const orderBooks = new Map<string, OrderBook>();
 const orderIndex = new Map<string, { userId: string; order: OrderSnapshot }>();
+const positions = new Map<string, Map<string, {
+  id: string;
+  userId: string;
+  market_id: string;
+  qty: number;
+  entryValue: number; // sum(price * qtySigned)
+  createdAt: string;
+  updatedAt: string;
+}>>();
 
 function now() {
   return new Date().toISOString();
@@ -151,6 +160,47 @@ function createFillSnapshot(params: {
     market_id: params.marketId,
     createdAt: now(),
   };
+}
+
+function ensurePosition(userId: string, marketId: string) {
+  let userPositions = positions.get(userId);
+  if (!userPositions) {
+    userPositions = new Map();
+    positions.set(userId, userPositions);
+  }
+
+  let pos = userPositions.get(marketId);
+  if (!pos) {
+    pos = {
+      id: crypto.randomUUID(),
+      userId,
+      market_id: marketId,
+      qty: 0,
+      entryValue: 0,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    userPositions.set(marketId, pos);
+  }
+
+  return pos;
+}
+
+function updatePositionForFill(userId: string, marketId: string, side: "Bid" | "Ask", qty: number, price: number) {
+  const pos = ensurePosition(userId, marketId);
+
+  // side Bid == buy -> positive qty, Ask == sell -> negative qty
+  const signedQty = side === "Bid" ? qty : -qty;
+
+  // Update entryValue and qty. For simplicity entryValue is sum(price * signedQty)
+  pos.entryValue += signedQty * price;
+  pos.qty += signedQty;
+  pos.updatedAt = now();
+
+  // If position closed, reset entryValue
+  if (pos.qty === 0) {
+    pos.entryValue = 0;
+  }
 }
 
 function updateOrderState(orderId: string, patch: Partial<OrderSnapshot>) {
@@ -343,6 +393,15 @@ async function processCreateOrder(message: Extract<ToEngine, { messageType: "cre
 
       fills.push(fill);
 
+      // update positions for maker and taker
+      const makerOrderEntryForSide = makerOrderEntry?.order.side ?? undefined;
+      // makerOrderEntry.side should be present on order snapshot
+      if (makerOrderEntry) {
+        updatePositionForFill(makerUserId, message.marketId, makerOrderEntry.order.side, fillQty, bestPrice);
+      }
+
+      updatePositionForFill(message.userId, message.marketId, takerOrder.side, fillQty, bestPrice);
+
       if (makerOrderEntry) {
         makerOrderEntry.order.filledQty = String(Number(makerOrderEntry.order.filledQty) + fillQty);
         makerOrderEntry.order.updatedAt = now();
@@ -449,6 +508,56 @@ async function main() {
 
     if (message.messageType === "create_order") {
       await processCreateOrder(message);
+    }
+
+    if (message.messageType === "get_equity") {
+      const user = ensureUser(message.userId);
+      await publisher.xAdd(BACKEND_STREAM, "*", {
+        loopBackId: message.loopBackId,
+        messageType: "get_equity",
+        availableBalance: user.balance.available,
+        lockedBalance: user.balance.locked,
+      });
+    }
+
+    if (message.messageType === "get_positions") {
+      const userPositions = positions.get(message.userId) ?? new Map();
+      const result: Array<{
+        id: string;
+        userId: string;
+        market_id: string;
+        qty: string;
+        avgEntryPrice: string;
+        status: "open" | "closed";
+        createdAt: string;
+        updatedAt: string;
+      }> = [];
+
+      for (const [marketId, pos] of userPositions.entries()) {
+        if (message.marketId && message.marketId !== marketId) continue;
+        const status = pos.qty === 0 ? "closed" : "open";
+        if (message.status && message.status !== status) continue;
+
+        const qty = String(pos.qty);
+        const avgEntryPrice = pos.qty === 0 ? "0" : String(Math.abs(pos.entryValue / pos.qty));
+
+        result.push({
+          id: pos.id,
+          userId: pos.userId,
+          market_id: pos.market_id,
+          qty,
+          avgEntryPrice,
+          status,
+          createdAt: pos.createdAt,
+          updatedAt: pos.updatedAt,
+        });
+      }
+
+      await publisher.xAdd(BACKEND_STREAM, "*", {
+        loopBackId: message.loopBackId,
+        messageType: "get_positions",
+        positions: JSON.stringify(result),
+      });
     }
 
     if (message.messageType === "cancel_order") {

@@ -7,6 +7,16 @@ export type ToEngine =
       amount: string;
     }
   | {
+      messageType: "get_equity";
+      userId: string;
+    }
+  | {
+      messageType: "get_positions";
+      userId: string;
+      marketId?: string;
+      status?: "open" | "closed";
+    }
+  | {
       messageType: "create_order";
       price: string;
       qty: string;
@@ -60,6 +70,17 @@ export type FillSnapshot = {
   createdAt: string;
 };
 
+export type PositionSnapshot = {
+  id: string;
+  userId: string;
+  market_id: string;
+  qty: string;
+  avgEntryPrice: string;
+  status: "open" | "closed";
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type UserSnapshot = {
   id: string;
   username?: string;
@@ -74,6 +95,17 @@ export type FromEngine =
       messageType: "onramp";
       availableBalance: string;
       lockedBalance: string;
+    }
+  | {
+      loopBackId: string;
+      messageType: "get_equity";
+      availableBalance: string;
+      lockedBalance: string;
+    }
+  | {
+      loopBackId: string;
+      messageType: "get_positions";
+      positions: PositionSnapshot[];
     }
   | {
       loopBackId: string;

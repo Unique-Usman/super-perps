@@ -106,6 +106,23 @@ async function main() {
       });
     }
 
+    if (message.messageType === "get_equity") {
+      loopbackResolves.get(loopBackId)?.({
+        loopBackId,
+        messageType: "get_equity",
+        availableBalance: message.availableBalance,
+        lockedBalance: message.lockedBalance,
+      });
+    }
+
+    if (message.messageType === "get_positions") {
+      loopbackResolves.get(loopBackId)?.({
+        loopBackId,
+        messageType: "get_positions",
+        positions: message.positions ? JSON.parse(message.positions) : [],
+      });
+    }
+
     if (message.messageType === "create_market") {
       loopbackResolves.get(loopBackId)?.({
         loopBackId,
