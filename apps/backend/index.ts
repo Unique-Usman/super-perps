@@ -15,6 +15,7 @@ import positionsClosedMarketId from "./controller/positionsClosedMarketId";
 import ordersOpenMarketId from "./controller/ordersOpenMarketId";
 import ordersMarketId from "./controller/ordersMarketId";
 import fills from "./controller/fills";
+import deleteOrder from "./controller/deleteOrder";
 
 const app = express();
 
@@ -73,6 +74,7 @@ app.post("/admin/market", async (req, res) => {
 
 app.post("/api/v1/onramp", authMiddleWare, onramp);
 app.post("/api/v1/order", authMiddleWare, order);
+app.delete("/order", authMiddleWare, deleteOrder);
 
 
 app.get("/equity/available", authMiddleWare, getAvailableEquity);

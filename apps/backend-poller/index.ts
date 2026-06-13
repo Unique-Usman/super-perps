@@ -156,8 +156,65 @@ async function main() {
         continue;
       }
 
+      if (messageType === "cancel_order") {
+        const success = message.success === "true";
+
+        if (!success) {
+          await subscriber.xAck(BACKEND_STREAM, DATABASE_CONSUMER_GROUP, messageId);
+          continue;
+        }
+
+        const rawOrder = message.order;
+        let order: OrderSnapshot | undefined;
+
+        if (rawOrder) {
+          try {
+            order = JSON.parse(rawOrder) as OrderSnapshot;
+          } catch (err) {
+            console.error("Failed to parse cancelled order payload", err);
+          }
+        }
+
+        if (order) {
+          const orderData = {
+            id: order.id,
+            userId: order.userId,
+            market_id: order.market_id,
+            orderType: order.orderType as any,
+            side: order.side as any,
+            price: order.price,
+            qty: order.qty,
+            initialMargin: order.initialMargin,
+            filledQty: order.filledQty,
+            status: "Cancelled" as any,
+            createdAt: new Date(order.createdAt),
+            updatedAt: new Date(order.updatedAt),
+          };
+
+          await prisma.order.upsert({
+            where: { id: order.id },
+            create: orderData,
+            update: {
+              ...orderData,
+              status: "Cancelled" as any,
+            },
+          });
+        } else if (message.orderId) {
+          await prisma.order.updateMany({
+            where: { id: message.orderId, userId: message.userId },
+            data: {
+              status: "Cancelled" as any,
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        await subscriber.xAck(BACKEND_STREAM, DATABASE_CONSUMER_GROUP, messageId);
+        continue;
+      }
+
       // For other message types we currently only ack and log
-      if (messageType === "onramp" || messageType === "create_market" || messageType === "cancel_order") {
+      if (messageType === "onramp" || messageType === "create_market") {
         console.log("Received engine message", messageType, message);
         await subscriber.xAck(BACKEND_STREAM, DATABASE_CONSUMER_GROUP, messageId);
         continue;

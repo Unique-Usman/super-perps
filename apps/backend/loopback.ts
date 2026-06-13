@@ -132,6 +132,20 @@ async function main() {
       });
     }
 
+    if (message.messageType === "cancel_order") {
+      loopbackResolves.get(loopBackId)?.({
+        loopBackId,
+        messageType: "cancel_order",
+        success: message.success === "true",
+        orderId: message.orderId,
+        userId: message.userId,
+        cancelledQty: message.cancelledQty,
+        marginReleased: message.marginReleased,
+        order: message.order ? JSON.parse(message.order) : undefined,
+        error: message.error,
+      });
+    }
+
     loopbackResolves.delete(loopBackId);
   }
 }

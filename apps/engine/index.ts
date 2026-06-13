@@ -39,6 +39,12 @@ type OpenOrder = {
   filledQty: number;
 };
 
+type CancellationResult = {
+  order: OrderSnapshot;
+  cancelledQty: number;
+  marginReleased: number;
+};
+
 type PriceLevel = {
   availableQty: number;
   openOrders: OpenOrder[];
@@ -266,6 +272,64 @@ function markOrderAfterMatch(params: {
   params.order.status = params.orderType === "market" ? "Cancelled" : "Open";
 }
 
+function getOppositeBookForSide(market: OrderBook, side: "Bid" | "Ask") {
+  return side === "Bid" ? market.bids : market.asks;
+}
+
+function cancelOrderInBook(params: {
+  market: OrderBook;
+  order: OrderSnapshot;
+}): CancellationResult | null {
+  const targetBook = params.order.side === "Bid" ? params.market.bids : params.market.asks;
+  const level = targetBook.get(params.order.price);
+
+  if (!level) {
+    return null;
+  }
+
+  const existingOrder = level.openOrders.find((open) => open.orderId === params.order.id);
+  if (!existingOrder) {
+    return null;
+  }
+
+  const cancelledQty = existingOrder.qty - existingOrder.filledQty;
+  if (cancelledQty < 0) {
+    return null;
+  }
+
+  level.openOrders = level.openOrders.filter((open) => open.orderId !== params.order.id);
+  level.availableQty -= cancelledQty;
+
+  if (level.availableQty <= 0) {
+    targetBook.delete(params.order.price);
+  }
+
+  const totalQty = Number(params.order.qty);
+  const filledQty = Number(params.order.filledQty);
+  const marginReleased = totalQty === 0 ? 0 : Number(params.order.initialMargin) * (cancelledQty / totalQty);
+
+  if (params.order.status === "Open") {
+    params.order.status = "Cancelled";
+  } else if (params.order.status === "PartiallyFilled") {
+    params.order.status = "Cancelled";
+  }
+
+  updateOrderState(params.order.id, {
+    status: params.order.status,
+    filledQty: params.order.filledQty,
+  });
+
+  const user = ensureUser(params.order.userId);
+  user.balance.available = String(Number(user.balance.available) + marginReleased);
+  user.balance.locked = String(Math.max(0, Number(user.balance.locked) - marginReleased));
+
+  return {
+    order: params.order,
+    cancelledQty,
+    marginReleased,
+  };
+}
+
 async function processCreateMarket(message: Extract<ToEngine, { messageType: "create_market" }> & { loopBackId: string }) {
   ensureMarket(message.marketId);
 
@@ -337,7 +401,7 @@ async function processCreateOrder(message: Extract<ToEngine, { messageType: "cre
   let remainingQty = requestedQty;
   let matchedQty = 0;
 
-  const oppositeBook = side === "Bid" ? market.asks : market.bids;
+  const oppositeBook = getOppositeBookForSide(market, side);
   const sortedPrices = Array.from(oppositeBook.keys()).sort((a, b) =>
     side === "Bid" ? Number(a) - Number(b) : Number(b) - Number(a),
   );
@@ -453,6 +517,73 @@ async function processCreateOrder(message: Extract<ToEngine, { messageType: "cre
   });
 }
 
+async function processCancelOrder(message: Extract<ToEngine, { messageType: "cancel_order" }> & { loopBackId: string }) {
+  const user = ensureUser(message.userId);
+
+  const existing = orderIndex.get(message.orderId);
+  if (!existing) {
+    await publisher.xAdd(BACKEND_STREAM, "*", {
+      loopBackId: message.loopBackId,
+      messageType: "cancel_order",
+      success: "false",
+      orderId: message.orderId,
+      userId: message.userId,
+      error: "Order not found",
+    });
+    return;
+  }
+
+  if (existing.userId !== message.userId) {
+    await publisher.xAdd(BACKEND_STREAM, "*", {
+      loopBackId: message.loopBackId,
+      messageType: "cancel_order",
+      success: "false",
+      orderId: message.orderId,
+      userId: message.userId,
+      error: "Not authorized to cancel this order",
+    });
+    return;
+  }
+
+  if (existing.order.status === "Filled" || existing.order.status === "Cancelled") {
+    await publisher.xAdd(BACKEND_STREAM, "*", {
+      loopBackId: message.loopBackId,
+      messageType: "cancel_order",
+      success: "false",
+      orderId: message.orderId,
+      userId: message.userId,
+      error: `The order is ${existing.order.status}`,
+    });
+    return;
+  }
+
+  const market = ensureMarket(existing.order.market_id);
+  const result = cancelOrderInBook({ market, order: existing.order });
+
+  if (!result) {
+    await publisher.xAdd(BACKEND_STREAM, "*", {
+      loopBackId: message.loopBackId,
+      messageType: "cancel_order",
+      success: "false",
+      orderId: message.orderId,
+      userId: message.userId,
+      error: "Order not found in order book",
+    });
+    return;
+  }
+
+  await publisher.xAdd(BACKEND_STREAM, "*", {
+    loopBackId: message.loopBackId,
+    messageType: "cancel_order",
+    success: "true",
+    orderId: message.orderId,
+    userId: message.userId,
+    cancelledQty: String(result.cancelledQty),
+    marginReleased: String(result.marginReleased),
+    order: JSON.stringify(result.order),
+  });
+}
+
 async function ensureConsumerGroup() {
   try {
     await client.xGroupCreate(STREAM, CONSUMER_GROUP, "$", {
@@ -510,6 +641,10 @@ async function main() {
       await processCreateOrder(message);
     }
 
+    if (message.messageType === "cancel_order") {
+      await processCancelOrder(message);
+    }
+
     if (message.messageType === "get_equity") {
       const user = ensureUser(message.userId);
       await publisher.xAdd(BACKEND_STREAM, "*", {
@@ -560,14 +695,6 @@ async function main() {
       });
     }
 
-    if (message.messageType === "cancel_order") {
-      await publisher.xAdd(BACKEND_STREAM, "*", {
-        loopBackId: message.loopBackId,
-        messageType: "cancel_order",
-        orderId: message.orderId,
-        userId: message.userId,
-      });
-    }
   }
 }
 

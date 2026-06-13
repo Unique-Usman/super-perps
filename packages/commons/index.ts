@@ -118,8 +118,13 @@ export type FromEngine =
   | {
       loopBackId: string;
       messageType: "cancel_order";
+      success: boolean;
       orderId: string;
       userId: string;
+      cancelledQty?: string;
+      marginReleased?: string;
+      order?: OrderSnapshot;
+      error?: string;
     }
   | {
       loopBackId: string;
