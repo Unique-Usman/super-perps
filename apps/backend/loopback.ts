@@ -70,12 +70,52 @@ async function main() {
       },
     );
 
-    const message: {
-      loopBackId: string;
-    } & ToEngine = response[0].messages[0].message;
+    const message = response?.[0]?.messages?.[0]?.message as
+      | Record<string, string>
+      | undefined;
 
-    loopbackResolves.get(message.loopBackId)?.(3);
-    loopbackResolves.delete(message.loopBackId);
+    if (!message) {
+      continue;
+    }
+
+    const loopBackId = message.loopBackId;
+
+    if (!loopBackId) {
+      continue;
+    }
+
+    console.log(message);
+
+    if (message.messageType === "onramp") {
+      loopbackResolves.get(loopBackId)?.({
+        messageType: "onramp",
+        loopBackId,
+        availableBalance: message.availableBalance,
+        lockedBalance: message.lockedBalance,
+      });
+    }
+
+    if (message.messageType === "create_order") {
+      loopbackResolves.get(loopBackId)?.({
+        loopBackId,
+        messageType: "create_order",
+        success: message.success === "true",
+        order: message.order ? JSON.parse(message.order) : undefined,
+        fills: message.fills ? JSON.parse(message.fills) : undefined,
+        error: message.error,
+      });
+    }
+
+    if (message.messageType === "create_market") {
+      loopbackResolves.get(loopBackId)?.({
+        loopBackId,
+        messageType: "create_market",
+        marketId: message.marketId,
+        success: message.success === "true",
+      });
+    }
+
+    loopbackResolves.delete(loopBackId);
   }
 }
 

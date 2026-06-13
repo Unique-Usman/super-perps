@@ -1,18 +1,16 @@
 {
-  "name": "commons",
+  "name": "backend-poller",
   "module": "index.ts",
   "type": "module",
   "private": true,
   "devDependencies": {
     "@types/bun": "latest"
   },
-  "export": {
-    ".": "./index.ts"
-  },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "redis": "^6.0.0",
+    "db": "workspace:*"
   }
 }

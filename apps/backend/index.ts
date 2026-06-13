@@ -3,9 +3,11 @@ import { prisma } from "db";
 import singUp from "./controller/signUp";
 import signIn from "./controller/signIn";
 import notFound from "./middleware/notFound";
-import errorHandler from "./middleware/errorHandler";
+import errorHandler, { AppError } from "./middleware/errorHandler";
 import authMiddleWare from "./middleware/authMiddleware";
 import { loopback } from "./loopback";
+import onramp from "./controller/onramp";
+import order from "./controller/order";
 
 const app = express();
 
@@ -23,8 +25,24 @@ app.post("/admin/market", async (req, res) => {
   const token = req.headers.token;
 
   if (token != process.env.ADMIN_SECRET) {
-    res.status(403).json({
+    return res.status(403).json({
       message: "Invalid Token",
+    });
+  }
+
+  const existingMarket = await prisma.market.findFirst({
+    where: {
+      slug: symbol,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (existingMarket) {
+    return res.status(409).json({
+      message: "Market already exists",
+      id: existingMarket.id,
     });
   }
 
@@ -46,23 +64,9 @@ app.post("/admin/market", async (req, res) => {
   });
 });
 
-app.post("/api/v1/onramp", authMiddleWare, async (req, res) => {
-  const userId: string = req.userId!;
-  console.log(userId);
-  console.log(req.body);
+app.post("/api/v1/onramp", authMiddleWare, onramp);
 
-  const queueLoopbackResponse = await loopback({
-    messageType: "onramp",
-    userId: userId,
-    amount: req.body.amount.toString(),
-  });
-
-  console.log(queueLoopbackResponse);
-
-  res.json({ sucess: true, message: queueLoopbackResponse });
-});
-
-app.post("api/v1/order", authMiddleWare, (req, res) => {});
+app.post("/api/v1/order", authMiddleWare, order);
 
 app.use(notFound);
 app.use(errorHandler);
