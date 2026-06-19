@@ -1,12 +1,9 @@
 import express from "express";
-import type { Request, Response, NextFunction } from "express";
-import { prisma } from "db";
 import singUp from "./controller/signUp";
 import signIn from "./controller/signIn";
 import notFound from "./middleware/notFound";
-import errorHandler, { AppError } from "./middleware/errorHandler";
+import errorHandler from "./middleware/errorHandler";
 import authMiddleWare from "./middleware/authMiddleware";
-import { loopback } from "./loopback";
 import onramp from "./controller/onramp";
 import order from "./controller/order";
 import getAvailableEquity from "./controller/getAvailableEquity";
@@ -16,73 +13,43 @@ import ordersOpenMarketId from "./controller/ordersOpenMarketId";
 import ordersMarketId from "./controller/ordersMarketId";
 import fills from "./controller/fills";
 import deleteOrder from "./controller/deleteOrder";
+import createMarket from "./controller/createMarket";
 
 const app = express();
+const API_PREFIX = "/api/v1";
 
 app.use(express.json());
 
 app.get("/health", (req, res) => {
   res.status(200).json({ success: true, message: "The server is up" });
 });
-app.post("/api/v1/signup", singUp);
-app.post("/api/v1/signin", signIn);
+app.post(`${API_PREFIX}/signup`, singUp);
+app.post(`${API_PREFIX}/signin`, signIn);
 
-app.post("/admin/market", async (req, res) => {
-  const { symbol, imageUrl } = req.body;
+app.post(`${API_PREFIX}/admin/market`, createMarket);
 
-  const token = req.headers.token;
+app.post(`${API_PREFIX}/onramp`, authMiddleWare, onramp);
+app.post(`${API_PREFIX}/order`, authMiddleWare, order);
+app.delete(`${API_PREFIX}/order`, authMiddleWare, deleteOrder);
 
-  if (token != process.env.ADMIN_SECRET) {
-    return res.status(403).json({
-      message: "Invalid Token",
-    });
-  }
-
-  const existingMarket = await prisma.market.findFirst({
-    where: {
-      slug: symbol,
-    },
-    select: {
-      id: true,
-    },
-  });
-
-  if (existingMarket) {
-    return res.status(409).json({
-      message: "Market already exists",
-      id: existingMarket.id,
-    });
-  }
-
-  const response = await prisma.market.create({
-    data: {
-      slug: symbol,
-      imageUrl,
-    },
-  });
-
-  const queueLoopbackResponse = await loopback({
-    messageType: "create_market",
-    marketId: response.id,
-  });
-
-  res.status(200).json({
-    message: "Market Created Succesfully",
-    id: response.id,
-  });
-});
-
-app.post("/api/v1/onramp", authMiddleWare, onramp);
-app.post("/api/v1/order", authMiddleWare, order);
-app.delete("/order", authMiddleWare, deleteOrder);
-
-
-app.get("/equity/available", authMiddleWare, getAvailableEquity);
-app.get("/positions/open/:marketId", authMiddleWare, positionsOpenMarketId);
-app.get("/positions/closed/:marketId", authMiddleWare, positionsClosedMarketId);
-app.get("/orders/open/:marketId", authMiddleWare, ordersOpenMarketId);
-app.get("/orders/:marketId", authMiddleWare, ordersMarketId);
-app.get("/fills", authMiddleWare, fills);
+app.get(`${API_PREFIX}/equity/available`, authMiddleWare, getAvailableEquity);
+app.get(
+  `${API_PREFIX}/positions/open/:marketId`,
+  authMiddleWare,
+  positionsOpenMarketId,
+);
+app.get(
+  `${API_PREFIX}/positions/closed/:marketId`,
+  authMiddleWare,
+  positionsClosedMarketId,
+);
+app.get(
+  `${API_PREFIX}/orders/open/:marketId`,
+  authMiddleWare,
+  ordersOpenMarketId,
+);
+app.get(`${API_PREFIX}/orders/:marketId`, authMiddleWare, ordersMarketId);
+app.get(`${API_PREFIX}/fills`, authMiddleWare, fills);
 
 app.use(notFound);
 app.use(errorHandler);

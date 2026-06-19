@@ -35,6 +35,12 @@ export type ToEngine =
   | {
       messageType: "create_market";
       marketId: string;
+    }
+  | {
+      messageType: "mark_price";
+      marketId: string;
+      markPrice: string;
+      indexPrice: string;
     };
 
 export type EngineOrderStatus = "Open" | "PartiallyFilled" | "Cancelled" | "Filled";

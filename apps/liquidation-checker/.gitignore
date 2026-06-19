@@ -27,10 +27,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .cache
 *.tsbuildinfo
 
-# runtime snapshots
-engine-snapshot.json
-engine-snapshot.json.tmp
-
 # IntelliJ based IDEs
 .idea
 
