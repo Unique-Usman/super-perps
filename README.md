@@ -55,6 +55,9 @@ packages/
 
 ## Architecture
 
+### A simplified Architecture. 
+![A simplified architecture of Super Perp](./simplify_architecture.png)
+
 ### System Overview
 
 ```mermaid
